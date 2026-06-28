@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.py[cod]
+dev.db
+.venv/
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.agents
+.pytest_cache
+.eve.example
+
+Keys.txt
+AGENTS.md 
+PLANS.md
+.log
