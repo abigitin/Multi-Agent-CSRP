@@ -21,7 +21,11 @@ declare global {
   }
 }
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+const GOOGLE_CLIENT_ID = (
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID
+) as string | undefined;
+const ALLOW_DEV_AUTH = import.meta.env.VITE_ALLOW_DEV_AUTH === "true";
 const DEV_ADMIN_EMAIL = "abir27534@gmail.com";
 
 export function AuthGate({
@@ -44,20 +48,42 @@ export function AuthGate({
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !window.google || user) return;
-    const target = document.getElementById("googleSignIn");
-    if (!target) return;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response) => signIn(response.credential),
-    });
-    target.innerHTML = "";
-    window.google.accounts.id.renderButton(target, {
-      theme: "outline",
-      size: "large",
-      width: 280,
-    });
+useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || user) return;
+
+    const initializeGoogleSignIn = () => {
+      const target = document.getElementById("googleSignIn");
+      if (!target || !window.google) return;
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => signIn(response.credential),
+      });
+      target.innerHTML = "";
+      window.google.accounts.id.renderButton(target, {
+        theme: "outline",
+        size: "large",
+        width: 280,
+      });
+    };
+
+    // If the script is already loaded, render immediately
+    if (window.google) {
+      initializeGoogleSignIn();
+      return;
+    }
+
+    // Otherwise, dynamically inject the script and wait for it
+    const scriptId = "google-gsi-script";
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeGoogleSignIn;
+      document.head.appendChild(script);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -115,6 +141,11 @@ export function AuthGate({
     await loadUsers();
   }
 
+  async function disable(id: number) {
+    await api.disableUser(id);
+    await loadUsers();
+  }
+
   async function remove(id: number) {
     await api.deleteUser(id);
     await loadUsers();
@@ -127,13 +158,17 @@ export function AuthGate({
   if (!user) {
     return (
       <AuthShell title="Sign in" subtitle="Use Google to request access to the support console.">
-        {GOOGLE_CLIENT_ID ? <div id="googleSignIn" /> : (
+        {GOOGLE_CLIENT_ID ? <div id="googleSignIn" /> : ALLOW_DEV_AUTH ? (
           <div className="devLogin">
             <input value={devEmail} onChange={(event) => setDevEmail(event.target.value)} />
             <button onClick={devSignIn}>
               <LogIn size={16} /> Dev Sign In
             </button>
           </div>
+        ) : (
+          <p className="authError">
+            Google sign-in is not configured in the frontend. Set `VITE_GOOGLE_CLIENT_ID`.
+          </p>
         )}
         {error && <p className="authError">{error}</p>}
       </AuthShell>
@@ -141,8 +176,14 @@ export function AuthGate({
   }
 
   if (user.status !== "approved") {
+    const statusCopy =
+      user.status === "disabled"
+        ? "Your access has been disabled by the admin. You cannot use the app or make API calls."
+        : user.status === "deleted"
+          ? "Your access record has been removed by the admin. Sign in again only if you have been re-invited."
+          : "An admin must approve your account before API access is enabled.";
     return (
-      <AuthShell title="Approval pending" subtitle="An admin must approve your account before API access is enabled.">
+      <AuthShell title={user.status === "pending" ? "Approval pending" : "Access unavailable"} subtitle={statusCopy}>
         <div className="pendingUser">
           <strong>{user.email}</strong>
           <span>Status: {user.status}</span>
@@ -156,7 +197,7 @@ export function AuthGate({
     <>
       {children({ user, onLogout: logout })}
       {user.role === "admin" && (
-        <AdminPanel users={users} onApprove={approve} onDelete={remove} onRefresh={loadUsers} />
+        <AdminPanel users={users} onApprove={approve} onDisable={disable} onDelete={remove} onRefresh={loadUsers} />
       )}
     </>
   );
@@ -187,11 +228,13 @@ function AuthShell({
 
 function AdminPanel({
   onApprove,
+  onDisable,
   onDelete,
   onRefresh,
   users,
 }: {
   onApprove: (id: number) => void;
+  onDisable: (id: number) => void;
   onDelete: (id: number) => void;
   onRefresh: () => void;
   users: AppUser[];
@@ -220,6 +263,9 @@ function AdminPanel({
                 <div className="adminActions">
                   <button onClick={() => onApprove(item.id)} disabled={item.status === "approved"}>
                     <UserCheck size={15} /> Approve
+                  </button>
+                  <button onClick={() => onDisable(item.id)} disabled={item.role === "admin" || item.status === "disabled" || item.status === "deleted"}>
+                    Disable
                   </button>
                   <button className="dangerButton" onClick={() => onDelete(item.id)} disabled={item.role === "admin"}>
                     <Trash2 size={15} /> Delete

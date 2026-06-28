@@ -51,6 +51,7 @@ export const api = {
   logout: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
   adminUsers: () => request<AppUser[]>("/admin/users"),
   approveUser: (id: number) => request<AppUser>(`/admin/users/${id}/approve`, { method: "POST" }),
+  disableUser: (id: number) => request<AppUser>(`/admin/users/${id}/disable`, { method: "POST" }),
   deleteUser: (id: number) => request<AppUser>(`/admin/users/${id}`, { method: "DELETE" }),
   status: () => request<SystemStatus>("/system/status"),
   tickets: () => request<Ticket[]>("/tickets"),
@@ -62,7 +63,7 @@ export const api = {
   updateDraft: (id: number, content: string) =>
     request<Draft>(`/drafts/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ content, edited_by: "reviewer" }),
+      body: JSON.stringify({ content }),
     }),
   approve: (runId: number, draftId: number | null, status: string, notes = "") =>
     request<Approval>("/approvals", {
@@ -71,7 +72,6 @@ export const api = {
         run_id: runId,
         draft_id: draftId,
         status,
-        reviewer: "reviewer",
         notes,
       }),
     }),

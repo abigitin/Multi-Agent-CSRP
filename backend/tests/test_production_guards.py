@@ -12,29 +12,18 @@ from backend.integrations.servicenow import ServiceNowClient
 def test_production_requires_live_configuration() -> None:
     settings = Settings(
         app_env="production",
-        groq_api_key=None,
-        pinecone_api_key=None,
-        servicenow_instance_url=None,
-        servicenow_user=None,
-        servicenow_password=None,
-        atlassian_base_url=None,
-        atlassian_email=None,
-        atlassian_api_token=None,
-        mcp_mode="in-process",
-        notification_mode="mock_outbox",
-        mail_from=None,
-        smtp_username=None,
-        smtp_password=None,
+        database_url="",
+        google_client_id=None,
+        app_jwt_secret="change-me-local-dev-secret",
     )
 
     with pytest.raises(RuntimeError) as exc:
         settings.validate_production()
 
     message = str(exc.value)
-    assert "GROQ_API_KEY" in message
-    assert "PINECONE_API_KEY" in message
-    assert "MCP_MODE=http" in message
-    assert "NOTIFICATION_MODE=smtp" in message
+    assert "DATABASE_URL" in message
+    assert "GOOGLE_CLIENT_ID" in message
+    assert "APP_JWT_SECRET" in message
 
 
 def test_development_allows_service_now_mock() -> None:
@@ -214,6 +203,7 @@ def test_approval_sends_notification_after_human_approval(monkeypatch: pytest.Mo
                 "run_id": 10,
                 "channel": "email",
                 "recipient": "customer@example.com",
+                "cc": ["approved@example.com"],
                 "subject": "Update for support ticket INC1",
                 "body": "Approved response",
             },
@@ -257,6 +247,42 @@ def test_access_token_rechecks_deleted_user_status(monkeypatch: pytest.MonkeyPat
     assert exc.value.status_code == 403
 
 
+def test_disabled_user_cannot_access_with_existing_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi import HTTPException
+    from backend.core import auth
+
+    approved_user = AppUser(
+        id=5,
+        google_sub="sub",
+        email="approved@example.com",
+        name="Approved",
+        role="user",
+        status="approved",
+    )
+    disabled_user = AppUser(
+        id=5,
+        google_sub="sub",
+        email="approved@example.com",
+        name="Approved",
+        role="user",
+        status="disabled",
+    )
+    monkeypatch.setattr(auth, "get_settings", lambda: Settings(app_jwt_secret="test-secret"))
+    token = create_access_token(approved_user)
+
+    class Request:
+        headers = {"Authorization": f"Bearer {token}"}
+
+    class DB:
+        def get(self, model: type, identity: int) -> AppUser:
+            return disabled_user
+
+    with pytest.raises(HTTPException) as exc:
+        auth.get_current_user(Request(), DB())
+
+    assert exc.value.status_code == 403
+
+
 def test_admin_can_approve_pending_user() -> None:
     from backend.api import routes
 
@@ -290,3 +316,38 @@ def test_admin_can_approve_pending_user() -> None:
     result = routes.approve_user(2, DB(), admin_user)
 
     assert result.status == "approved"
+
+
+def test_admin_can_disable_approved_user() -> None:
+    from backend.api import routes
+
+    approved_user = AppUser(
+        id=2,
+        google_sub="approved-sub",
+        email="approved@example.com",
+        name="Approved",
+        role="user",
+        status="approved",
+    )
+    admin_user = AppUser(
+        id=1,
+        google_sub="admin-sub",
+        email="abir27534@gmail.com",
+        name="Admin",
+        role="admin",
+        status="approved",
+    )
+
+    class DB:
+        def get(self, model: type, identity: int) -> AppUser:
+            return approved_user
+
+        def commit(self) -> None:
+            pass
+
+        def refresh(self, item: object) -> None:
+            pass
+
+    result = routes.disable_user(2, DB(), admin_user)
+
+    assert result.status == "disabled"

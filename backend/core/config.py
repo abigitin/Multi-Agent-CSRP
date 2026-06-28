@@ -10,6 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./dev.db"
+    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     llm_provider: str = "groq-compatible"
     groq_api_key: str | None = None
@@ -66,6 +67,10 @@ class Settings(BaseSettings):
         return not self.is_production
 
     @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
     def servicenow_ready(self) -> bool:
         return bool(self.servicenow_instance_url and self.servicenow_user and self.servicenow_password)
 
@@ -81,21 +86,13 @@ class Settings(BaseSettings):
         if not self.is_production:
             return
         missing: list[str] = []
-        if not self.groq_api_key:
-            missing.append("GROQ_API_KEY")
-        if not self.pinecone_api_key:
-            missing.append("PINECONE_API_KEY")
-        if not self.pinecone_host:
-            missing.append("PINECONE_HOST")
-        if not self.servicenow_ready:
-            missing.extend(["SERVICENOW_INSTANCE_URL", "SERVICENOW_USER", "SERVICENOW_PASSWORD"])
-        if not self.atlassian_ready:
-            missing.extend(["ATLASSIAN_BASE_URL", "ATLASSIAN_EMAIL", "ATLASSIAN_API_TOKEN"])
-        if self.mcp_mode != "http":
-            missing.append("MCP_MODE=http")
-        if self.notification_mode != "smtp":
-            missing.append("NOTIFICATION_MODE=smtp")
-        if not self.smtp_ready:
+        if not self.database_url:
+            missing.append("DATABASE_URL")
+        if not self.google_client_id:
+            missing.append("GOOGLE_CLIENT_ID")
+        if not self.app_jwt_secret or self.app_jwt_secret == "change-me-local-dev-secret":
+            missing.append("APP_JWT_SECRET")
+        if self.notification_mode == "smtp" and not self.smtp_ready:
             missing.extend(["MAIL_FROM", "SMTP_USERNAME", "SMTP_PASSWORD"])
         if missing:
             unique = sorted(set(missing))

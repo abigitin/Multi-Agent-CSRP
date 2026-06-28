@@ -20,7 +20,7 @@ export type AppUser = {
   name: string;
   picture: string | null;
   role: "admin" | "user";
-  status: "pending" | "approved" | "deleted";
+  status: "pending" | "approved" | "disabled" | "deleted";
   created_at: string;
   updated_at: string;
 };

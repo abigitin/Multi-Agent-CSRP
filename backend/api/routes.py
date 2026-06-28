@@ -72,7 +72,15 @@ def list_users(
     db: Session = Depends(get_db),
     admin: AppUser = Depends(get_current_admin),
 ) -> list[AppUser]:
-    return list(db.scalars(select(AppUser).order_by(AppUser.created_at.desc())))
+    users = list(db.scalars(select(AppUser)))
+    status_rank = {"pending": 0, "approved": 1, "disabled": 2, "deleted": 3}
+    users.sort(
+        key=lambda user: (
+            status_rank.get(user.status, 99),
+            -user.created_at.timestamp(),
+        )
+    )
+    return users
 
 
 @router.post("/admin/users/{user_id}/approve", response_model=UserOut)
@@ -84,7 +92,27 @@ def approve_user(
     user = db.get(AppUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.status == "deleted":
+        raise HTTPException(status_code=400, detail="Deleted users cannot be approved")
     user.status = "approved"
+    user.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/admin/users/{user_id}/disable", response_model=UserOut)
+def disable_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(get_current_admin),
+) -> AppUser:
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.email == admin.email:
+        raise HTTPException(status_code=400, detail="Admin cannot disable own account")
+    user.status = "disabled"
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
@@ -278,7 +306,7 @@ def update_draft(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
     draft.content = payload.content
-    draft.edited_by = payload.edited_by
+    draft.edited_by = user.email
     draft.status = "edited"
     draft.updated_at = datetime.utcnow()
     db.commit()
@@ -311,6 +339,7 @@ def create_approval(
                 "run_id": run.id,
                 "channel": "email",
                 "recipient": ticket.caller_email or "",
+                "cc": [user.email],
                 "subject": f"Update for support ticket {run.ticket_id}",
                 "body": draft.content,
             },
@@ -330,13 +359,13 @@ def create_approval(
         run_id=run.id,
         draft_id=draft.id,
         status=status,
-        reviewer=payload.reviewer,
+        reviewer=user.email,
         notes=payload.notes,
     )
     run.next_step = "complete" if status == "approved" else "human_review"
     run.guardrail_status = "reviewed"
     draft.status = "approved" if status == "approved" else status
-    draft.edited_by = payload.reviewer
+    draft.edited_by = user.email
     draft.updated_at = datetime.utcnow()
     ticket.status = "resolved" if status == "approved" else "needs_review"
     ticket.assigned_agent = "reviewer"

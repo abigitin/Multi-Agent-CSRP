@@ -13,7 +13,11 @@ def get_system_status() -> SystemStatus:
             name="database",
             mode=database_mode,
             configured=True,
-            detail="SQLite active; SQL Server migration target remains schema-compatible.",
+            detail=(
+                "SQLite active for local development."
+                if database_mode == "sqlite"
+                else "External database configured through DATABASE_URL."
+            ),
         ),
         llm=ProviderStatus(
             name="llm",

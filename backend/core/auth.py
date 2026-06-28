@@ -74,9 +74,11 @@ def create_or_update_user(db: Session, identity: dict[str, str]) -> AppUser:
         user.google_sub = identity["sub"]
         user.name = identity.get("name") or user.name
         user.picture = identity.get("picture") or user.picture
-        user.role = "admin" if role == "admin" else user.role
+        user.role = role
         if role == "admin":
             user.status = "approved"
+        elif user.status not in {"approved", "disabled", "deleted"}:
+            user.status = "pending"
         user.updated_at = datetime.utcnow()
     else:
         user = AppUser(

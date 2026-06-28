@@ -24,7 +24,7 @@ class MailClient:
             return "smtp" if self.settings.smtp_ready else "error"
         return "mock_outbox"
 
-    def send(self, recipient: str, subject: str, body: str) -> MailSendResult:
+    def send(self, recipient: str, subject: str, body: str, cc: list[str] | None = None) -> MailSendResult:
         if self.settings.notification_mode != "smtp":
             return MailSendResult("queued", "mock_outbox", response="Stored in local outbox.")
         if not self.settings.smtp_ready:
@@ -41,6 +41,9 @@ class MailClient:
         email = EmailMessage()
         email["From"] = self.settings.mail_from
         email["To"] = recipient
+        clean_cc = [item.strip() for item in (cc or []) if item and "@" in item]
+        if clean_cc:
+            email["Cc"] = ", ".join(clean_cc)
         email["Subject"] = subject
         email.set_content(body)
         try:

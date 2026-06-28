@@ -143,12 +143,6 @@ def _retrieval(state: GraphState, mcp: MCPClient) -> GraphState:
 def _resolution(state: GraphState) -> GraphState:
     draft = generate_resolution(state["customer_query"], state["context_chunks"])
     draft = _clean_draft_text(draft)
-    if state["evidence"]:
-        draft = f"{draft}\n\nSources:\n" + "\n".join(
-            f"Source {index}: {item['title']} ({item['source']})"
-            for index, item in enumerate(state["evidence"][:8], start=1)
-        )
-    draft = _clean_draft_text(draft)
     return _append_step(
         {**state, "current_draft": draft, "next_step": "evaluation"},
         "resolution_agent",
@@ -182,8 +176,6 @@ def _guardrails(state: GraphState) -> GraphState:
         findings.append("No citations found for the generated response.")
     if _contains_pii(state["current_draft"]):
         findings.append("Potential PII detected in draft.")
-    if "Sources:" not in state["current_draft"]:
-        findings.append("Draft does not include explicit source references.")
     if len(state["current_draft"].strip()) < 80:
         findings.append("Draft is too short for customer-ready communication.")
     passed = not findings and state["confidence_score"] >= get_settings().auto_approval_threshold
@@ -315,5 +307,6 @@ def _clean_draft_text(text: str) -> str:
     cleaned = text.replace("**", "")
     cleaned = re.sub(r"(?m)^\s*[-*]\s+", "", cleaned)
     cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"(?m)^[A-Za-z][A-Za-z ,.'&-]{0,80}:\s*", "", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()

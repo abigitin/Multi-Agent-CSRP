@@ -20,18 +20,18 @@ def generate_resolution(query: str, context_chunks: list[str]) -> str:
             [
                 (
                     "system",
-                    "Draft concise customer support resolutions using only provided context. Use plain text only. Do not use Markdown, bold markers, bullet dashes, or numbered lists.",
+                    "Draft a customer-ready support email using only the provided context. Use plain text only. Do not use Markdown, bold markers, bullet dashes, or numbered lists. Keep it warm, direct, and easy to read.",
                 ),
                 (
                     "user",
-                    f"Customer issue:\n{query}\n\nContext:\n{context}\n\nDraft the resolution with short paragraphs for issue summary, recommended resolution, validation, and sources.",
+                    f"Customer issue:\n{query}\n\nContext:\n{context}\n\nWrite a short email with: greeting, acknowledgement of the issue, what we found or recommend, a validation or next-step paragraph, and a brief closing. Do not include source citations in the email body.",
                 ),
             ]
         )
         content = str(response.content).strip()
         if not content:
             raise RuntimeError("Groq-compatible LLM returned an empty response.")
-        return content
+        return _clean_resolution(content)
     except Exception as exc:
         raise RuntimeError(f"Groq-compatible LLM request failed: {exc}") from exc
 
@@ -73,11 +73,27 @@ def generate_incident_chat_answer(question: str, incident_context: str, knowledg
 
 def _fallback_resolution(query: str, context_chunks: list[str]) -> str:
     context = context_chunks[0] if context_chunks else "No matching runbook was found."
-    return (
-        f"Issue summary: We reviewed the reported issue: {query}\n\n"
-        f"Recommended resolution: {context}\n\n"
-        "Validation: Apply the recommended step, then confirm whether the issue is resolved."
+    return _clean_resolution(
+        "\n".join(
+            [
+                "Hello,",
+                "",
+                f"Thank you for reporting this issue. We reviewed the problem you described: {query}",
+                "",
+                f"Based on the available support guidance, the recommended next step is: {context}",
+                "",
+                "After applying that step, please verify whether the issue is resolved. If it continues, reply with the latest behavior and we will continue the investigation.",
+                "",
+                "Best regards,",
+                "Support Team",
+            ]
+        )
     )
+
+
+def _clean_resolution(text: str) -> str:
+    cleaned = text.replace("**", "").strip()
+    return cleaned
 
 
 def _fallback_chat_answer(question: str, incident_context: str, knowledge_context: list[str]) -> str:

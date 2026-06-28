@@ -116,8 +116,13 @@ class MCPToolServer:
         recipient = str(payload.get("recipient") or "")
         subject = str(payload.get("subject") or "Support ticket update")
         body = str(payload.get("body") or "")
+        cc = [
+            str(item).strip()
+            for item in (payload.get("cc") or [])
+            if str(item).strip()
+        ]
         try:
-            send_result = mail.send(recipient, subject, body)
+            send_result = mail.send(recipient, subject, body, cc=cc)
         except RuntimeError as exc:
             send_result = None
             status = "failed"
@@ -136,7 +141,11 @@ class MCPToolServer:
             body=body,
             status=status,
             provider_mode=provider_mode,
-            provider_response=send_result.response if send_result else "",
+            provider_response=(
+                (send_result.response + (f" CC: {', '.join(cc)}" if cc else ""))
+                if send_result
+                else ""
+            ),
             error=error,
         )
         self.db.add(item)

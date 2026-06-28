@@ -18,6 +18,7 @@ import {
   Workflow,
   X,
   XCircle,
+  Mail,
 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -465,6 +466,7 @@ function RunWorkspace({
   run: TicketRun;
 }) {
   const [overlay, setOverlay] = useState<"citations" | "trace" | null>(null);
+  const draftPreview = buildDraftPreview(draftText);
 
   return (
     <div className="workspace">
@@ -488,7 +490,7 @@ function RunWorkspace({
         <div className="sectionTitle">
           <div>
             <h3>Editable AI Draft</h3>
-            <span>Email is sent only after approval</span>
+            <span>Customer-facing email draft. Delivery happens only after approval.</span>
           </div>
           <div className="inlineActions">
             <button className="secondaryButton" onClick={onSaveDraft} disabled={busy || !run.drafts.length}>
@@ -501,6 +503,15 @@ function RunWorkspace({
               <XCircle size={16} /> Changes
             </button>
           </div>
+        </div>
+        <div className="summaryBand">
+          <RunMetric icon={<Mail size={18} />} label="Format" value="Customer email" />
+          <RunMetric icon={<BookOpenText size={18} />} label="Saved Evidence" value={`${run.citations.length} citations`} />
+        </div>
+        <div className="draftPreview" aria-label="Draft preview">
+          {draftPreview.map((paragraph, index) => (
+            <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+          ))}
         </div>
         <textarea value={draftText} onChange={(event) => onDraftChange(event.target.value)} />
       </section>
@@ -622,4 +633,11 @@ function formatError(err: unknown) {
   } catch {
     return err.message;
   }
+}
+
+function buildDraftPreview(value: string) {
+  return value
+    .split(/\n\s*\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

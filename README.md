@@ -1,110 +1,114 @@
 # AgenticAI Customer Support Resolution Platform
 
-## What This Project Does
+## Overview
 
-This application helps a support team resolve customer tickets with a controlled multi-agent workflow.
+AgenticAI is a FastAPI + React support-operations app that:
 
-In simple terms:
+1. Syncs or loads support tickets.
+2. Retrieves knowledge from Pinecone or local fallback documents.
+3. Generates a human-editable customer email draft.
+4. Requires human approval before sending.
+5. Sends the approved email through Gmail SMTP and CCs the signed-in reviewer.
+6. Protects app access with Google sign-in plus admin approval workflow.
 
-1. The backend reads support tickets from ServiceNow or local demo data.
-2. It reads knowledge articles from Atlassian or local markdown files.
-3. It stores searchable knowledge in Pinecone using Pinecone integrated embeddings.
-4. When an operator runs the agents, the system retrieves relevant knowledge, drafts a customer response, checks guardrails, stores citations, and records every agent step.
-5. The operator can review the draft, approve it, request changes, and send a Gmail SMTP notification.
-6. The frontend shows the complete workflow in a clean operations dashboard.
+## Deployment Shape
 
-## Main Features
+- Frontend: Netlify or Render Static Site
+- Backend: Render Web Service
+- Database: Neon PostgreSQL
 
-- ServiceNow ticket sync with local mock fallback for development.
-- Pinecone live RAG retrieval using the `customer-support` index, `__default__` namespace, and `text` integrated-embedding field.
-- Groq-compatible LLM response generation with deterministic fallback.
-- MCP tool layer for knowledge search, ticket lookup, memory, and notification sending.
-- Agent workflow with intake, retrieval, resolution, communication, evaluation, guardrails, and approval steps.
-- SQLite persistence for tickets, runs, traces, drafts, citations, approvals, memory, and notifications.
-- Gmail SMTP delivery through the app notification path.
-- React dashboard for operations, review, approval, and delivery status.
+This repo is now prepared for that setup:
 
-## High-Level Architecture
+- backend uses `DATABASE_URL`
+- Postgres driver is declared in `backend/requirements.txt`
+- CORS is controlled by `CORS_ORIGINS`
+- production boot validation no longer requires unrelated optional integrations
+- Render blueprint is included in [render.yaml](/C:/1work/AgenticAI/render.yaml)
 
-```mermaid
-flowchart LR
-    Operator["Support Operator"] --> Frontend["React Frontend\nTicket Dashboard"]
-    Frontend --> API["FastAPI Backend\nREST API"]
+## Required Environment Variables
 
-    API --> DB[("SQLite dev.db\nTickets, runs, drafts,\ntraces, citations, notifications")]
-    API --> Workflow["LangGraph-style\nAgent Workflow"]
-    API --> Sync["Sync Services"]
+Use [.env.example](/C:/1work/AgenticAI/.env.example) as the template.
 
-    Sync --> ServiceNow["ServiceNow\nor mock JSON"]
-    Sync --> Atlassian["Atlassian\nor mock markdown"]
-    Sync --> Pinecone["Pinecone Index\ncustomer-support\nnamespace __default__"]
+Minimum backend variables for deployment:
 
-    Workflow --> MCP["MCP Tool Layer"]
-    MCP --> Pinecone
-    MCP --> Mail["Gmail SMTP"]
-    Workflow --> LLM["Groq-compatible LLM\nwith fallback draft"]
-    Workflow --> DB
-    Mail --> DB
+- `APP_ENV=production`
+- `DATABASE_URL=postgresql+psycopg://...`
+- `CORS_ORIGINS=https://your-frontend-domain`
+- `GOOGLE_CLIENT_ID=...`
+- `APP_JWT_SECRET=...`
+- `NOTIFICATION_MODE=smtp`
+- `MAIL_FROM=...`
+- `SMTP_USERNAME=...`
+- `SMTP_PASSWORD=...`
+
+Frontend variables:
+
+- `VITE_API_BASE_URL=https://your-render-backend.onrender.com`
+- `VITE_GOOGLE_CLIENT_ID=your-google-client-id`
+
+## Deploy Backend On Render
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint or Web Service from the repo.
+3. If using the included blueprint, Render will read [render.yaml](/C:/1work/AgenticAI/render.yaml).
+4. Set these secret env vars in Render:
+   - `DATABASE_URL`
+   - `CORS_ORIGINS`
+   - `GOOGLE_CLIENT_ID`
+   - `APP_JWT_SECRET`
+   - `MAIL_FROM`
+   - `SMTP_USERNAME`
+   - `SMTP_PASSWORD`
+   - optionally `GROQ_API_KEY`, `PINECONE_API_KEY`, `PINECONE_HOST`
+5. Render start command is already defined as:
+
+```text
+python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
 ```
 
-## How The Main Files Work
+Health endpoint:
 
-### Backend
+```text
+/health
+```
 
-- `backend/main.py`: Creates the FastAPI application, enables CORS, registers routes, validates production settings, and initializes the database at startup.
-- `backend/api/routes.py`: Defines API endpoints used by the frontend, such as ticket list, ticket detail, ServiceNow sync, knowledge sync, agent run, draft edit, approval, status, and notifications.
-- `backend/core/config.py`: Loads `.env` settings for Pinecone, Gmail SMTP, Groq, MCP, ServiceNow, Atlassian, and database configuration.
-- `backend/core/database.py`: Creates the SQLAlchemy database engine and initializes/migrates SQLite tables.
-- `backend/core/models.py`: Defines database tables for tickets, runs, traces, drafts, citations, approvals, memory, knowledge documents, and notifications.
-- `backend/core/status.py`: Builds the provider status shown on the frontend: database, LLM, Pinecone, ServiceNow, MCP, and notifications.
-- `backend/agents/workflow.py`: Runs the agent process. It retrieves evidence, creates a response, sends or queues notification, evaluates confidence, applies guardrails, and saves all outputs.
-- `backend/agents/llm.py`: Calls the Groq-compatible LLM if configured; otherwise returns a deterministic fallback response.
-- `backend/mcp/server.py`: Implements tool calls used by agents, including ticket search, knowledge search, memory read/write, and notification send/queue.
-- `backend/mcp/client.py`: Calls MCP over HTTP when configured, or falls back to in-process MCP during development.
-- `backend/rag/knowledge_sync.py`: Reads Atlassian/mock knowledge, saves it locally, and upserts chunks to Pinecone.
-- `backend/rag/pinecone_store.py`: Central Pinecone integration. It upserts `_id` and `text` records for integrated embeddings and searches Pinecone by query text.
-- `backend/integrations/mail.py`: Sends real SMTP email when `NOTIFICATION_MODE=smtp`; otherwise queues locally.
-- `backend/integrations/servicenow.py`: Fetches ServiceNow tickets or loads mock tickets in development.
-- `backend/integrations/atlassian.py`: Fetches Confluence/Jira knowledge or lets the app use mock markdown when not configured.
+## Deploy Frontend On Netlify
 
-### Frontend
+Netlify settings:
 
-- `frontend/src/App.tsx`: Loads the ticket dashboard as the main screen.
-- `frontend/src/components/TicketDashboard.tsx`: Main operations UI. It displays provider status, tickets, selected ticket details, agent runs, editable drafts, citations, traces, approvals, and notifications.
-- `frontend/src/api.ts`: Small frontend API client that calls the backend REST endpoints.
-- `frontend/src/types/api.ts`: TypeScript shapes for backend API responses.
-- `frontend/src/styles.css`: Professional dashboard styling, responsive layout, colors, panels, buttons, cards, and workflow views.
+- Base directory: `frontend`
+- Build command: `npm run build`
+- Publish directory: `dist`
 
-### Configuration And Data
+Frontend env vars:
 
-- `.env`: Real local configuration. It contains live Pinecone and Gmail SMTP settings. Do not commit or share secrets.
-- `.env.example`: Template configuration for others.
-- `backend/mock_data/servicenow_tickets.json`: Demo tickets used when ServiceNow credentials are missing.
-- `backend/mock_data/confluence/*.md`: Demo knowledge articles used when Atlassian credentials are missing.
-- `dev.db`: Local SQLite database.
-- `Images/`: Pinecone screenshots used as implementation references.
+```text
+VITE_API_BASE_URL=https://your-render-backend.onrender.com
+VITE_GOOGLE_CLIENT_ID=your-google-client-id
+```
 
-## How A Ticket Run Works Under The Hood
+If you prefer Render Static Site instead of Netlify:
 
-1. The operator selects a ticket and clicks **Run Agents**.
-2. The frontend calls `POST /tickets/{ticket_id}/runs`.
-3. FastAPI loads the ticket and starts `run_ticket_workflow`.
-4. The workflow reads the ticket and memory through MCP tools.
-5. The retrieval agent calls `knowledge.search`.
-6. MCP searches Pinecone with the customer query text.
-7. Pinecone returns matching knowledge chunks and scores.
-8. The resolution agent asks the LLM to draft a response using retrieved evidence.
-9. The communication agent sends or queues the notification through the mail client.
-10. The evaluation agent calculates confidence.
-11. The guardrail agent checks citations, draft quality, and policy conditions.
-12. The system stores the run, draft, traces, citations, approvals, and notification record in SQLite.
-13. The frontend refreshes and shows the complete run history.
+- Root directory: `frontend`
+- Build command: `npm install && npm run build`
+- Publish directory: `dist`
 
-## Running The App Locally
+## Neon PostgreSQL
+
+The app supports Neon through a standard SQLAlchemy Postgres URL, for example:
+
+```text
+postgresql+psycopg://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```
+
+SQLite-specific auto-column migration only runs for SQLite. Postgres uses normal table creation on startup.
+
+## Local Development
 
 Backend:
 
 ```powershell
+python -m pip install -r backend/requirements.txt
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -112,32 +116,13 @@ Frontend:
 
 ```powershell
 cd frontend
+npm.cmd install
 npm.cmd run dev -- --port 5173 --strictPort
 ```
 
-Open:
+## Notes
 
-```text
-http://127.0.0.1:5173
-```
-
-## Verified Current Setup
-
-- Pinecone mode: live.
-- Pinecone index: `customer-support`.
-- Pinecone namespace: `__default__`.
-- Pinecone integrated embedding field: `text`.
-- SMTP mode: `smtp`.
-- SMTP readiness: true.
-- Knowledge sync upserts records to Pinecone.
-- Ticket workflow retrieves citations in `pinecone` mode.
-- SMTP app-path notification can send successfully with the configured Gmail app password.
-- Frontend production build passes.
-- Backend tests pass.
-
-## Important Notes
-
-- Keep `.env` private because it contains API keys and SMTP credentials.
-- Development can still use mock ServiceNow and mock Atlassian data.
-- Production should use real ServiceNow and Atlassian credentials.
-- If Gmail rejects SMTP, regenerate the Gmail app password and update `SMTP_PASSWORD`.
+- Do not commit `.env` with live secrets.
+- Google OAuth must allow your frontend origin.
+- Approved email delivery now CCs the signed-in reviewer automatically.
+- ServiceNow and Atlassian remain optional; the app can still run with mock/local fallback data.
